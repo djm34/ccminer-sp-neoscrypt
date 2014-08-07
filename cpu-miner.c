@@ -188,6 +188,7 @@ bool have_gbt = true;
 bool have_stratum = false;
 static bool submit_old = false;
 bool use_syslog = false;
+bool use_colors = false;
 static bool opt_background = false;
 static bool opt_quiet = false;
 static int opt_retries = -1;
@@ -294,6 +295,7 @@ Options:\n\
       --no-longpoll     disable X-Long-Polling support\n\
       --no-stratum      disable X-Stratum support\n\
   -q, --quiet           disable per-thread hashmeter output\n\
+  -C, --color           enable colored output\n\
   -D, --debug           enable debug output\n\
   -P, --protocol-dump   verbose dump of protocol-level activities\n"
 #ifdef HAVE_SYSLOG_H
@@ -318,8 +320,8 @@ static char const short_options[] =
 #ifdef HAVE_SYSLOG_H
 	"S"
 #endif
-	"a:c:Dhp:Px:qr:R:s:t:T:o:u:O:Vd:F:f:mv:";
- 
+	"a:c:CDhp:Px:qr:R:s:t:T:o:u:O:Vd:F:f:mv:";
+
 static struct option const options[] = {
 	{ "algo", 1, NULL, 'a' },
 #ifndef WIN32
@@ -328,6 +330,7 @@ static struct option const options[] = {
 	{ "benchmark", 0, NULL, 1005 },
 	{ "cert", 1, NULL, 1001 },
 	{ "config", 1, NULL, 'c' },
+	{ "color", 0, NULL, 'C' },
 	{ "debug", 0, NULL, 'D' },
 	{ "help", 0, NULL, 'h' },
 	{ "no-longpoll", 0, NULL, 1003 },
@@ -459,12 +462,14 @@ static void share_result(int result, const char *reason)
 	pthread_mutex_unlock(&stats_lock);
 	
 	sprintf(s, hashrate >= 1e6 ? "%.0f" : "%.2f", 1e-3 * hashrate);
-	applog(LOG_INFO, "accepted: %lu/%lu (%.2f%%), %s khash/s %s",
-		   accepted_count,
-		   accepted_count + rejected_count,
-		   100. * accepted_count / (accepted_count + rejected_count),
-		   s,
-		   result ? "(yay!!!)" : "(booooo)");
+	applog(LOG_NOTICE, "accepted: %lu/%lu (%.2f%%), %s khash/s %s",
+			accepted_count,
+			accepted_count + rejected_count,
+			100. * accepted_count / (accepted_count + rejected_count),
+			s,
+			use_colors ?
+				(result ? CL_GRN "(yay!!!)" : CL_RED "(booooo)")
+			:	(result ? "(yay!!!)" : "(booooo)"));
 
 	if (opt_debug && reason)
 		applog(LOG_DEBUG, "DEBUG: reject reason: %s", reason);
@@ -507,10 +512,12 @@ static void share_result(int result, const char *reason)
 				accepted_count,
 				accepted_count + rejected_count,
 				100. * accepted_count / (accepted_count + rejected_count),
-				s,s1,s2, result ? "(yay!!!)" : "(booooo)");
+				s,s1,s2, use_colors ?
+					(result ? CL_GRN "yay!" : CL_RED "booooo")
+					: (result ? "(yay!!!)" : "(booooo)"));
 
-	if (opt_debug && reason)
-		applog(LOG_DEBUG, "DEBUG: reject reason: %s", reason);
+	if (!opt_quiet && reason)
+		applog(LOG_WARNING, "reject reason: %s", reason);
 }
 
 static bool submit_upstream_work(CURL *curl, struct work *work)
@@ -735,8 +742,9 @@ static bool workio_submit_work(struct workio_cmd *wc, CURL *curl)
 		}
 
 		/* pause, then restart work-request loop */
-		applog(LOG_ERR, "...retry after %d seconds",
-			opt_fail_pause);
+		if (!opt_benchmark)
+			applog(LOG_ERR, "...retry after %d seconds", opt_fail_pause);
+
 		sleep(opt_fail_pause);
 	}
 
@@ -1002,8 +1010,8 @@ static void *miner_thread(void *userdata)
 	 * of the number of CPUs */
 	if (num_processors > 1 && opt_n_threads % num_processors == 0) {
 		if (!opt_quiet)
-			applog(LOG_INFO, "Binding thread %d to cpu %d",
-			       thr_id, thr_id % num_processors);
+			applog(LOG_DEBUG, "Binding thread %d to cpu %d", thr_id,
+					thr_id % num_processors);
 		affine_to_cpu(thr_id, thr_id % num_processors);
 	}
 	// printf("\n miner threads 2\n");
@@ -1240,8 +1248,8 @@ static void *miner_thread(void *userdata)
 			for (i = 0; i < opt_n_threads && thr_hashrates[i]; i++) 
 				hashrate += thr_hashrates[i];
 			if (i == opt_n_threads) {
-				sprintf(s, hashrate >= 1e6 ? "%.0f" : "%.2f", 1e-3 * hashrate);
-				applog(LOG_INFO, "Total: %s khash/s", s);
+				sprintf(s, hashrate >= 1e6 ? "%.0f" : "%.2f", hashrate / 1000.);
+				applog(LOG_NOTICE, "Total: %s khash/s", s);
 			}
 		}
 
@@ -1321,7 +1329,7 @@ start:
 			pthread_mutex_lock(&g_work_lock);
 			if (work_decode(json_object_get(val, "result"), &g_work)) {
 				if (opt_debug)
-					applog(LOG_DEBUG, "DEBUG: got new work");
+					applog(LOG_BLUE, "LONGPOLL pushed new work");
 				time(&g_work_time);
 				restart_threads();
 			}
@@ -1413,7 +1421,8 @@ static void *stratum_thread(void *userdata)
 					tq_push(thr_info[work_thr_id].q, NULL);
 					goto out;
 				}
-				applog(LOG_ERR, "...retry after %d seconds", opt_fail_pause);
+				if (!opt_benchmark)
+					applog(LOG_ERR, "...retry after %d seconds", opt_fail_pause);
 				sleep(opt_fail_pause);
 			}
 		}
@@ -1429,7 +1438,7 @@ static void *stratum_thread(void *userdata)
 			time(&g_work_time);
 			pthread_mutex_unlock(&g_work_lock);
 			if (stratum.job.clean) {
-				if (!opt_quiet) applog(LOG_INFO, "Stratum detected new block");
+				if (!opt_quiet) applog(LOG_BLUE, "Stratum detected new block");
 				restart_threads();
 			}
 		}
@@ -1509,6 +1518,9 @@ static void parse_arg (int key, char *arg)
 		}
 		break;
 	}
+	case 'C':
+		use_colors = true;
+		break;
 	case 'q':
 		opt_quiet = true;
 		break;
@@ -1698,6 +1710,9 @@ static void parse_arg (int key, char *arg)
 	default:
 		show_usage_and_exit(1);
 	}
+
+	if (use_syslog)
+		use_colors = false;
 }
 
 static void parse_config(void)
