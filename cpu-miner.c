@@ -20,12 +20,14 @@
 #include <sys/time.h>
 #include <time.h>
 #include <math.h>
+#include <signal.h>
 #ifdef WIN32
 
 #include <windows.h>
+#include <stdint.h>
+BOOL WINAPI ConsoleHandler(DWORD);
 #else
 #include <errno.h>
-#include <signal.h>
 #include <sys/resource.h>
 #if HAVE_SYS_SYSCTL_H
 #include <sys/types.h>
@@ -58,6 +60,7 @@ extern "C"
 #endif
 int cuda_num_devices();
 void cuda_devicenames();
+void cuda_devicereset();
 int cuda_finddevice(char *name);
 #ifdef __cplusplus
 }
@@ -983,9 +986,8 @@ static void *miner_thread(void *userdata)
 	uint32_t end_nonce = (0xffffffffU) / opt_n_threads * (thr_id + 1) - 0x20;
 	unsigned char *scratchbuf = NULL;
 	char s[16];
+	int i;
 
-    static int rounds = 0;
-	
 	memset(&work, 0, sizeof(work)); // prevent work from being used uninitialized
 
 	/* Set worker threads to nice 19 and then preferentially to SCHED_IDLE
@@ -1214,7 +1216,6 @@ static void *miner_thread(void *userdata)
 			/* should never happen */
 			goto out;
 		}
-
 
 		/* record scanhash elapsed time */
 		gettimeofday(&tv_end, NULL);
@@ -1774,14 +1775,36 @@ static void signal_handler(int sig)
 		applog(LOG_INFO, "SIGHUP received");
 		break;
 	case SIGINT:
+		signal(sig, SIG_IGN);
 		applog(LOG_INFO, "SIGINT received, exiting");
+		cuda_devicereset();
 		exit(0);
 		break;
 	case SIGTERM:
 		applog(LOG_INFO, "SIGTERM received, exiting");
+		cuda_devicereset();
 		exit(0);
 		break;
 	}
+}
+#else
+BOOL WINAPI ConsoleHandler(DWORD dwType)
+{
+	switch (dwType) {
+	case CTRL_C_EVENT:
+		applog(LOG_INFO, "CTRL_C_EVENT received, exiting");
+		cuda_devicereset();
+		exit(0);
+		break;
+	case CTRL_BREAK_EVENT:
+		applog(LOG_INFO, "CTRL_BREAK_EVENT received, exiting");
+		cuda_devicereset();
+		exit(0);
+		break;
+	default:
+		return false;
+	}
+	return true;
 }
 #endif
 
@@ -1861,9 +1884,12 @@ int main(int argc, char *argv[])
 		if (i < 0)
 			applog(LOG_ERR, "chdir() failed (errno = %d)", errno);
 		signal(SIGHUP, signal_handler);
-		signal(SIGINT, signal_handler);
 		signal(SIGTERM, signal_handler);
 	}
+	/* Always catch Ctrl+C */
+	signal(SIGINT, signal_handler);
+#else
+	SetConsoleCtrlHandler((PHANDLER_ROUTINE)ConsoleHandler, TRUE);
 #endif
 
 	if (num_processors == 0)
@@ -1971,6 +1997,9 @@ int main(int argc, char *argv[])
 #endif
 
 	applog(LOG_INFO, "workio thread dead, exiting.");
+
+	// nvprof requires this
+	cuda_devicereset();
 
 	return 0;
 }
