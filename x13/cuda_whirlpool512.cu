@@ -2276,11 +2276,12 @@ static __device__ __forceinline__ void whirlpool_device_round(const uint64_t* __
 uint64_t t0, t1, t2, t3, t4, t5, t6, t7;
 uint64_t T0, T1, T2, T3, T4, T5, T6, T7; 
 
-
-#pragma unroll    
+#if __CUDA_ARCH__ < 500
+#pragma unroll
+#endif
     for (unsigned r = 0; r < 10; r ++) {
         
-		t0 = ROUND_ELT(sharedMemory,h, 0, 7, 6, 5, 4, 3, 2, 1);
+        t0 = ROUND_ELT(sharedMemory,h, 0, 7, 6, 5, 4, 3, 2, 1);
         t1 = ROUND_ELT(sharedMemory,h, 1, 0, 7, 6, 5, 4, 3, 2);
         t2 = ROUND_ELT(sharedMemory,h, 2, 1, 0, 7, 6, 5, 4, 3);
         t3 = ROUND_ELT(sharedMemory,h, 3, 2, 1, 0, 7, 6, 5, 4);
@@ -2306,8 +2307,6 @@ uint64_t T0, T1, T2, T3, T4, T5, T6, T7;
         h[6] = t6;
         h[7] = t7;
 		
-		
-
         n[0] = xor3(T0,t0,InitVector_RC[r]);
         n[1] = xor1(T1,h[1]);
         n[2] = xor1(T2,h[2]);
@@ -2328,8 +2327,9 @@ static __device__ __forceinline__ void whirlpool_device_finalround(const uint64_
 uint64_t t0, t1, t2, t3, t4, t5, t6, t7;
 
 
-
-#pragma unroll    
+#if __CUDA_ARCH__ < 500
+#pragma unroll
+#endif
     for (unsigned r = 0; r < 9; r ++) {
         
 		t0 = ROUND_ELT(sharedMemory,h, 0, 7, 6, 5, 4, 3, 2, 1);
