@@ -218,6 +218,7 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     <ClCompile Include="compat\jansson\strbuffer.c" />
     <ClCompile Include="compat\jansson\utf.c" />
     <ClCompile Include="compat\jansson\value.c" />
+    <ClCompile Include="compat\winansi.c" />
     <ClCompile Include="cpu-miner.c">
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">/TP %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">/TP %(AdditionalOptions)</AdditionalOptions>
@@ -271,6 +272,7 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     <ClInclude Include="compat\stdbool.h" />
     <ClInclude Include="compat\sys\time.h" />
     <ClInclude Include="compat\unistd.h" />
+    <ClInclude Include="compat\winansi.h" />
     <ClInclude Include="cpuminer-config.h" />
     <ClInclude Include="cuda_groestlcoin.h" />
     <ClInclude Include="cuda_helper.h" />
