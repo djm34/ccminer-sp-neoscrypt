@@ -61,6 +61,9 @@ ccminer_CPPFLAGS	= -msse2 @LIBCURL_CPPFLAGS@ @OPENMP_CFLAGS@ $(PTHREAD_FLAGS) -f
 x11/cuda_x11_shavite512.o: x11/cuda_x11_shavite512.cu
 	$(NVCC) -I . -I cudpp-2.1/include @CFLAGS@ -Xptxas "-abi=no -v" -gencode=arch=compute_30,code=\"sm_30,compute_30\" -gencode=arch=compute_35,code=\"sm_35,compute_35\" -gencode=arch=compute_50,code=\"sm_50,compute_50\" --maxrregcount=128 --ptxas-options=-v $(JANSSON_INCLUDES) -o $@ -c $<        
 
+x13/cuda_sha512.o: x13/cuda_sha512.cu
+	$(NVCC) -I . -I cudpp-2.1/include @CFLAGS@ -Xptxas " -v" -gencode=arch=compute_30,code=\"sm_30,compute_30\" -gencode=arch=compute_35,code=\"sm_35,compute_35\" -gencode=arch=compute_50,code=\"sm_50,compute_50\" --maxrregcount=74 --ptxas-options=-v $(JANSSON_INCLUDES) -o $@ -c $<
+
 # whirlpool compiles faster with 64 regs
 x13/cuda_whirlpool512.o: x13/cuda_whirlpool512.cu
 	$(NVCC) -I . -I cudpp-2.1/include @CFLAGS@ -Xptxas "-abi=no -v" -gencode=arch=compute_30,code=\"sm_30,compute_30\" -gencode=arch=compute_35,code=\"sm_35,compute_35\" -gencode=arch=compute_50,code=\"sm_50,compute_50\" --maxrregcount=64 --ptxas-options=-v $(JANSSON_INCLUDES) -o $@ -c $<        
