@@ -10,6 +10,7 @@ rm -f Makefile.in
 rm -f config.status
 ./autogen.sh || echo done
 
-CFLAGS="-O2" ./configure --with-mpir-src=../mpir-2.6.0
+# CFLAGS="-O2" ./configure --with-mpir-src=../mpir-2.6.0
+. configure.sh
 
-make
+make -j 4
