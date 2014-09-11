@@ -148,6 +148,7 @@ typedef enum {
 	ALGO_PENTABLAKE,
 	ALGO_QUARK,
 	ALGO_QUBIT,
+	ALGO_SKEIN,
 	ALGO_WHC,
 	ALGO_X11,
 	ALGO_X13,
@@ -176,6 +177,7 @@ static const char *algo_names[] = {
 	"penta",
 	"quark",
 	"qubit",
+	"skein",
 	"whirl",
 	"x11",
 	"x13",
@@ -265,12 +267,14 @@ Options:\n\
 			penta       Pentablake hash (5x Blake 512)\n\
 			quark       Quark\n\
 			qubit       Qubit\n\
+			skein       Skein\n\
 			x11         X11 (DarkCoin)\n\
 			x13         X13 (MaruCoin)\n\
 			x14         X14\n\
 			x15         X15\n\
 			x17         X17 (peoplecurrency)\n\
 			whirl       Whirlcoin (old whirlpool)\n\
+\
   -d, --devices         Comma separated list of CUDA devices to use.\n\
                         Device IDs start counting from 0! Alternatively takes\n\
                         string names of your cards like gtx780ti or gt640#2\n\
@@ -283,7 +287,7 @@ Options:\n\
   -u, --user=USERNAME   username for mining server\n\
   -p, --pass=PASSWORD   password for mining server\n\
       --cert=FILE       certificate for mining server using SSL\n\
-  -x, --proxy=[PROTOCOL://]HOST[:PORT]  connect through a proxy\n\
+  -x, --proxy=[PROTOCOL:/\/]HOST[:PORT]  connect through a proxy\n\
   -t, --threads=N       number of miner threads (default: number of nVidia GPUs)\n\
   -r, --retries=N       number of times to retry if a network call fails\n\
                           (default: retry indefinitely)\n\
@@ -301,7 +305,7 @@ Options:\n\
 "\
   -S, --syslog          use system log for output messages\n"
 #endif
-#ifndef WIN32
+#if 0 /* ndef WIN32 */
 "\
   -B, --background      run the miner in the background\n"
 #endif
@@ -1195,16 +1199,6 @@ continue_scan:
 			                      max_nonce, &hashes_done);
 			break;
 
-		case ALGO_QUARK:
-			rc = scanhash_quark(thr_id, work.data, work.target,
-			                      max_nonce, &hashes_done);
-			break;
-
-		case ALGO_QUBIT:
-			rc = scanhash_qubit(thr_id, work.data, work.target,
-			                      max_nonce, &hashes_done);
-			break;
-
 		case ALGO_ANIME:
 			rc = scanhash_anime(thr_id, work.data, work.target,
 			                      max_nonce, &hashes_done);
@@ -1232,6 +1226,21 @@ continue_scan:
 
 		case ALGO_PENTABLAKE:
 			rc = scanhash_pentablake(thr_id, work.data, work.target,
+			                      max_nonce, &hashes_done);
+			break;
+
+		case ALGO_QUARK:
+			rc = scanhash_quark(thr_id, work.data, work.target,
+			                      max_nonce, &hashes_done);
+			break;
+
+		case ALGO_QUBIT:
+			rc = scanhash_qubit(thr_id, work.data, work.target,
+			                      max_nonce, &hashes_done);
+			break;
+
+		case ALGO_SKEIN:
+			rc = scanhash_skein(thr_id, work.data, work.target,
 			                      max_nonce, &hashes_done);
 			break;
 
