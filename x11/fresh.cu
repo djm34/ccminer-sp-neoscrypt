@@ -119,7 +119,7 @@ extern "C" int scanhash_fresh(int thr_id, uint32_t *pdata,
 		uint32_t buf[8]; memset(buf, 0, sizeof buf);
 		CUDA_SAFE_CALL(cudaMemcpy(buf, d_hash[thr_id], sizeof buf, cudaMemcpyDeviceToHost));
 		CUDA_SAFE_CALL(cudaThreadSynchronize());
-		print_hash((unsigned char*)buf); printf("\n");
+		applog_hash((unsigned char*)buf);
 #endif
 
 		foundNonce = cuda_check_cpu_hash_64(thr_id, throughput, pdata[19], NULL, d_hash[thr_id], order++);
