@@ -9,6 +9,7 @@
 
 #include "miner.h"
 
+/* not used in sha256_direct_hash_64() */
 #define BLOCKS 1
 #define THREADS 2
 
@@ -206,7 +207,7 @@ static void clear_ctx_buf(sha256_ctx *ctx)
  * SHA256_Final
  */
 __device__
-static void sha256_digest(sha256_ctx *ctx, uint32_t * result)
+static void sha256_digest(sha256_ctx *ctx, uint32_t * result, bool last_only)
 {
 	uint8_t i;
 	if (ctx->buflen <= 55) {	//data+0x80+datasize fits in one 512bit block
@@ -225,11 +226,17 @@ static void sha256_digest(sha256_ctx *ctx, uint32_t * result)
 		ctx_add_length(ctx);
 		sha256_block(ctx);
 	}
+	if (last_only) {
+		result[6] = SWAP(ctx->h[6]);
+		result[7] = SWAP(ctx->h[7]);
+		return;
+	}
 	#pragma unroll 8
 	for (i = 0; i < 8; i++)
 		result[i] = SWAP(ctx->h[i]);
 }
 
+#if 1
 __device__
 static void sha256_gpu_hash(const uint32_t idx, const uint8_t *data, uint8_t inlen, uint32_t *out)
 {
@@ -239,34 +246,19 @@ static void sha256_gpu_hash(const uint32_t idx, const uint8_t *data, uint8_t inl
 	init_ctx(&ctx);
 
 	ctx_update(&ctx, data, inlen);
-	sha256_digest(&ctx, sha_hash);
+	sha256_digest(&ctx, sha_hash, false);
 
-//	__syncthreads();
+	__syncthreads();
 	#pragma unroll 8
 	for (int i = 0; i < 8; i++)
 		out[i] = sha_hash[i];
 }
 
-/* skein direct call */
-
 __global__
-void sha256_direct_hash_64(const uint32_t threads, uint32_t *skeinhash_buf)
-{
-	uint32_t thread = (blockDim.x * blockIdx.x + threadIdx.x);
-	if (thread < threads)
-	{
-		uint32_t *inbuf = &skeinhash_buf[thread*(96/4)]; // 64-bytes skein hashes + 32 output
-		uint32_t *outbuf = &inbuf[16];
-		sha256_gpu_hash(0, (const uint8_t*) inbuf, 64, outbuf);
-	}
-}
-
-#if 1
-__global__
-void kernel_sha256_hash_64(uint32_t * inbuf, uint32_t * outbuf)
+void kernel_sha256_hash_64(uint32_t *inbuf, uint32_t *outbuf)
 {
 	uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-	sha256_gpu_hash(idx, (const uint8_t*) inbuf, 64, outbuf);
+	sha256_gpu_hash(idx, (const uint8_t*) &inbuf[idx * 16], 64, &outbuf[idx * 8]);
 }
 
 /* not required except for tests */
@@ -305,3 +297,25 @@ extern "C" void sha256_hash_64(uint32_t *inbuf, uint32_t *outbuf)
 	CUDA_SAFE_CALL(cudaFree(cuda_outbuf));
 }
 #endif
+
+__global__
+/* skein final direct call */
+void sha256_check_direct_hash_64(const uint32_t threads, const uint32_t first, const uint32_t target7, const uint8_t *skeinbuf, uint32_t *resNonces)
+{
+	uint32_t thread = (blockDim.x * blockIdx.x + threadIdx.x);
+	if (thread < threads)
+	{
+		sha256_ctx ctx;
+		init_ctx(&ctx);
+		ctx_update(&ctx, &skeinbuf[thread*64], 64);
+
+		uint32_t sha_hash[8];
+		sha256_digest(&ctx, sha_hash, true);
+
+		uint32_t nounce = first + thread;
+		if (sha_hash[7] <= target7 && resNonces[0] > nounce) {
+			resNonces[0] = nounce;
+			printf("%08x %08x <= %x\n", sha_hash[6], sha_hash[7], target7);
+		}
+	}
+}

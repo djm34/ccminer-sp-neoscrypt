@@ -35,8 +35,10 @@ extern "C" void skein_hash(void *state, const void *input)
 	char ghash64[64*2];
 	uint32_t ghash32[8*2];
 	memcpy(ghash64, hash64, 64);
+	//memcpy(ghash64 + 64, hash64, 64);
 	sha256_hash_64((uint32_t*)ghash64, ghash32);
-	applog_hash((uint8_t*)ghash32);
+	applog_hash((uint8_t*) ghash32);
+	//applog_hash((uint8_t*) &ghash32[8]);
 #endif
 
 	SHA256_Init(&ctx_sha256);
@@ -64,10 +66,7 @@ extern bool opt_n_threads;
 extern int device_map[8];
 
 __constant__
-static uint32_t __align__(32) c_Target[8];
-
-__constant__
-static uint64_t __align__(32) c_data[10];
+static uint64_t __align__(32) d_data[10];
 
 /* 8 adapters max (-t threads) */
 static uint32_t *d_resNonce[8];
@@ -90,7 +89,8 @@ __device__ static uint32_t prevsum = 0;
 #endif
 
 /* in cuda_sha2.cu */
-__global__ void sha256_direct_hash_64(const uint32_t threads, uint32_t *skeinhash_buffer);
+__global__ void sha256_check_direct_hash_64(const uint32_t threads, 
+	const uint32_t first, const uint32_t target7, const uint8_t *skeinbuf, uint32_t *resNonces);
 
 /* SKEIN 512 */
 
@@ -472,13 +472,13 @@ void skein_gpu_hash_80(const uint32_t threads, const uint32_t startNounce, uint3
 		h[7] = SKEIN_IV512[7];
 
 		/* core */
-		//gpu_memcpy(buf, c_data, 64);
+		//gpu_memcpy(buf, d_data, 64);
 #if !USE_CACHE
-		skein_compress(h, c_data, 96 + 0x80, 1, 0);
+		skein_compress(h, d_data, 96 + 0x80, 1, 0);
 #else
 		if (crcsum != prevsum) {
 			prevsum = crcsum;
-			skein_compress(h, c_data, 96 + 0x80, 1, 0);
+			skein_compress(h, d_data, 96 + 0x80, 1, 0);
 			#pragma unroll
 			for(int i=0; i<8; i++) {
 				cache[i] = h[i];
@@ -492,8 +492,8 @@ void skein_gpu_hash_80(const uint32_t threads, const uint32_t startNounce, uint3
 #endif
 
 		/* close */
-		buf[0] = c_data[8];
-		buf[1] = c_data[9];
+		buf[0] = d_data[8];
+		buf[1] = d_data[9];
 		((uint32_t*)buf)[3] = (nounce); // cuda_swab32 or not ?
 		gpu_memclr64(&buf[2], 48);
 		skein_compress(h, buf, 0x160, 1, 16);
@@ -503,29 +503,17 @@ void skein_gpu_hash_80(const uint32_t threads, const uint32_t startNounce, uint3
 
 		// skein_sha256_gpu_hash(threads, startNounce, resNounce, (uint32_t *)h);
 		// 64bytes/4 (uint32) saved for sha input
-		uint64_t *out = (uint64_t*) &d_hash[thread*(96/4)];
+		uint64_t *out = (uint64_t*) &d_hash[thread*(64/4)];
 		#pragma unroll
 		for (int i = 0; i < 8; i++) {
 			out[i] = h[i];
 		}
-	}
-}
-
-__global__
-void skein_check_sha_hash(const uint32_t threads, const uint32_t startNounce, uint32_t *sha_hash, uint32_t *resNounce)
-{
-	const uint32_t thread = (blockDim.x * blockIdx.x + threadIdx.x);
-	if (thread < threads)
-	{
-		uint32_t nounce = startNounce + thread;
-		uint32_t *h = &sha_hash[thread*(96/4) + (64/4)];
-		if (cuda_swab32(h[7]) <= c_Target[7] && resNounce[0] > nounce)
-			resNounce[0] = nounce;
+		__syncthreads();
 	}
 }
 
 __host__
-uint32_t skein_cpu_hash_80(const uint32_t thr_id, const uint32_t threads, const uint32_t startNounce, uint32_t *d_hash, const uint32_t crcsum, const int order)
+uint32_t skein_cpu_hash_80(const uint32_t thr_id, const uint32_t threads, const uint32_t first, const uint32_t *ptarget, const uint32_t crcsum)
 {
 	const int threadsperblock = TPB;
 	uint32_t result = MAXU;
@@ -538,25 +526,21 @@ uint32_t skein_cpu_hash_80(const uint32_t thr_id, const uint32_t threads, const 
 	if (cudaMemset(d_resNonce[thr_id], 0xff, NBN*sizeof(uint32_t)) != cudaSuccess)
 		return result;
 
-	skein_gpu_hash_80 <<< grid, block, shared_size >>> (threads, startNounce, d_hash, crcsum);
-	cudaDeviceSynchronize();
+	skein_gpu_hash_80 <<< grid, block, shared_size >>> (threads, first, d_hash[thr_id], crcsum);
+	cudaThreadSynchronize();
 
-#if NULLTEST
+#if 0
 	unsigned char skeindata[64];
-	if (cudaSuccess == cudaMemcpy(skeindata, d_hash, 64, cudaMemcpyDeviceToHost)) {
+	if (cudaSuccess == cudaMemcpy(skeindata, d_hash[thr_id], 64, cudaMemcpyDeviceToHost)) {
 		applog(LOG_BLUE, "SKEIN RES:");
 		applog_hash(skeindata);
 	}
 #endif
-
-	sha256_direct_hash_64 <<< grid, block, shared_size >>> (threads, d_hash);
-	cudaDeviceSynchronize();
-
-	skein_check_sha_hash <<< grid, block, shared_size >>> (threads, startNounce, d_hash, d_resNonce[thr_id]);
+	sha256_check_direct_hash_64 <<< grid, block, shared_size >>> (threads, first, ptarget[7], (uint8_t*) d_hash[thr_id], d_resNonce[thr_id]);
 	cudaDeviceSynchronize();
 
 	if (cudaSuccess == cudaMemcpy(h_resNonce[thr_id], d_resNonce[thr_id], NBN*sizeof(uint32_t), cudaMemcpyDeviceToHost)) {
-		cudaThreadSynchronize(); /* seems no more required */
+		//cudaThreadSynchronize(); /* seems no more required */
 		result = h_resNonce[thr_id][0];
 #if NBN > 1
 		for (int n = 0; n < (NBN - 1); n++)
@@ -567,12 +551,11 @@ uint32_t skein_cpu_hash_80(const uint32_t thr_id, const uint32_t threads, const 
 }
 
 __host__
-static void skein_cpu_setBlock_80(uint32_t *pdata, const uint32_t *ptarget)
+static void skein_cpu_setBlock_80(uint32_t *pdata)
 {
 	uint32_t data[20];
 	memcpy(data, pdata, 80);
-	CUDA_SAFE_CALL(cudaMemcpyToSymbol(c_data, data, sizeof(data), 0, cudaMemcpyHostToDevice));
-	CUDA_SAFE_CALL(cudaMemcpyToSymbol(c_Target, ptarget, 32, 0, cudaMemcpyHostToDevice));
+	CUDA_SAFE_CALL(cudaMemcpyToSymbol(d_data, data, sizeof(data), 0, cudaMemcpyHostToDevice));
 }
 
 extern "C" int scanhash_skein(int thr_id, uint32_t *pdata, const uint32_t *ptarget,
@@ -616,22 +599,21 @@ extern "C" int scanhash_skein(int thr_id, uint32_t *pdata, const uint32_t *ptarg
 		}
 		CUDA_SAFE_CALL(cudaMallocHost(&h_resNonce[thr_id], NBN * sizeof(uint32_t)));
 		CUDA_SAFE_CALL(cudaMalloc(&d_resNonce[thr_id], NBN * sizeof(uint32_t)));
-		CUDA_SAFE_CALL(cudaMalloc(&d_hash[thr_id], 96 * throughput)); /* 64 really required */
+		CUDA_SAFE_CALL(cudaMalloc(&d_hash[thr_id], 64 * throughput)); // skein hash res
 		init[thr_id] = true;
 	}
 
 	if (opt_debug && throughput < THROUGHPUT)
 		applog(LOG_DEBUG, "throughput=%u, start=%x, max=%x", throughput, first_nonce, max_nonce);
 
-	skein_cpu_setBlock_80(pdata, ptarget);
+	skein_cpu_setBlock_80(pdata);
 #if USE_CACHE
 	crcsum = crc32_u32t(pdata, 64);
 #endif
 
 	do {
 		// GPU HASH
-		int order = 0;
-		uint32_t foundNonce = skein_cpu_hash_80(thr_id, throughput, pdata[19], d_hash[thr_id], crcsum, order++);
+		uint32_t foundNonce = skein_cpu_hash_80(thr_id, throughput, pdata[19], ptarget, crcsum);
 		//foundNonce = cuda_swab32(foundNonce);
 		if (foundNonce != MAXU)
 		{
