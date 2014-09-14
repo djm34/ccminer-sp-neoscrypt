@@ -466,6 +466,9 @@
     <CudaCompile Include="skein512.cu">
       <Filter>Source Files\CUDA</Filter>
     </CudaCompile>
+    <CudaCompile Include="cuda_sha2.cu">
+      <Filter>Source Files\CUDA</Filter>
+    </CudaCompile>
     <CudaCompile Include="keccak\cuda_keccak256.cu">
       <Filter>Source Files\CUDA\keccak</Filter>
     </CudaCompile>

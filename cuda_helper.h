@@ -37,11 +37,19 @@ extern const uint3 threadIdx;
 #define SPH_T32(x) ((x) & SPH_C32(0xFFFFFFFF))
 
 #if __CUDA_ARCH__ < 350
-// Kepler (Compute 3.0)
+// Default
 #define ROTL32(x, n) SPH_T32(((x) << (n)) | ((x) >> (32 - (n))))
 #else
-// Kepler (Compute 3.5, 5.0)
+// Maxwell (Compute 3.5, 5.0)
 #define ROTL32(x, n) __funnelshift_l( (x), (x), (n) )
+#endif
+
+#if __CUDA_ARCH__ < 350
+// Default
+#define ROTR32(x, n) SPH_T32((x >> n) | (x << (32-n)))
+#else
+// Maxwell (Compute 3.5, 5.0)
+#define ROTR32(x, n) __funnelshift_r( (x), (x), (n) )
 #endif
 
 __device__ __forceinline__ uint64_t MAKE_ULONGLONG(uint32_t LO, uint32_t HI)
