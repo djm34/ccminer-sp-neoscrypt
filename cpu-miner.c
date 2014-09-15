@@ -205,7 +205,7 @@ uint16_t opt_vote = 9999;
 static int num_processors;
 int device_map[8] = {0,1,2,3,4,5,6,7}; // CB
 char *device_name[8]; // CB
-int tp_coef[8];
+float tp_coef[8];
 static char *rpc_url;
 static char *rpc_userpass;
 static char *rpc_user, *rpc_pass;
@@ -275,7 +275,7 @@ Options:\n\
                         Device IDs start counting from 0! Alternatively takes\n\
                         string names of your cards like gtx780ti or gt640#2\n\
                         (matching 2nd gt640 in the PC)\n\
-  -F, --throughput     coefficient to apply to the number of threads\n\
+  -F, --throughput      coefficient to apply to the number of threads\n\
   -f, --diff            Divide difficulty by this factor (std is 1) \n\
   -v, --vote=VOTE       block reward vote (for HeavyCoin)\n\
   -m, --trust-pool      trust the max block reward vote (maxvote) sent by the pool\n\
@@ -1689,11 +1689,12 @@ static void parse_arg (int key, char *arg)
 		break;
     case 'F': 
 		{
-			char * pch = strtok (arg,",");
-			int tmp_n_threads = 0, last = 0;
+			char * pch = strtok(arg,",");
+			int tmp_n_threads = 0;
+			float last = 1.0;
 			while (pch != NULL) {
-				tp_coef[tmp_n_threads++] = last = atoi(pch);
-				pch = strtok (NULL, ",");
+				tp_coef[tmp_n_threads++] = last = atof(pch);
+				pch = strtok(NULL, ",");
 			}
 			while (tmp_n_threads < 8) tp_coef[tmp_n_threads++] = last;
 		}
