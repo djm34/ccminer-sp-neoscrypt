@@ -147,25 +147,25 @@
 #define LIBCURL_PROTOCOL_TFTP 1
 
 /* Name of package */
-#define PACKAGE "ccminer"
+#define PACKAGE "cncminer"
 
 /* Define to the address where bug reports for this package should be sent. */
 #define PACKAGE_BUGREPORT ""
 
 /* Define to the full name of this package. */
-#define PACKAGE_NAME "ccminer"
+#define PACKAGE_NAME "cncminer"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "ccminer 1.4.6"
+#define PACKAGE_STRING "cncminer 1.5.0"
 
 /* Define to the one symbol short name of this package. */
-#define PACKAGE_TARNAME "ccminer"
+#define PACKAGE_TARNAME "cncminer"
 
 /* Define to the home page for this package. */
 #define PACKAGE_URL ""
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "1.4.6"
+#define PACKAGE_VERSION "1.5.0"
 
 /* If using the C implementation of alloca, define if you know the
    direction of stack growth for your system; otherwise it will be
@@ -188,7 +188,7 @@
 #define USE_XOP 1
 
 /* Version number of package */
-#define VERSION "1.4.6"
+#define VERSION "1.5.0"
 
 /* Define curl_free() as free() if our version of curl lacks curl_free. */
 /* #undef curl_free */

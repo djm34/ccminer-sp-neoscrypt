@@ -1,4 +1,4 @@
-AC_INIT([ccminer], [1.4.6])
+AC_INIT([cncminer], [1.5.0])
 
 AC_PREREQ([2.59c])
 AC_CANONICAL_SYSTEM
@@ -103,6 +103,23 @@ AC_CHECK_LIB([pthread], [pthread_create], PTHREAD_LIBS="-lpthread",
 AC_CHECK_LIB([ssl],[SSL_library_init], [], [AC_MSG_ERROR([OpenSSL library required])])
 AC_CHECK_LIB([crypto],[EVP_DigestFinal_ex], [], [AC_MSG_ERROR([OpenSSL library required])])
 
+# *** OpenCL ***
+AC_ARG_ENABLE([opencl],
+  [AC_HELP_STRING([--disable-opencl],[Disable optional OpenCL support])],
+    [opencl=$enableval]
+  )
+
+if test "x$opencl" != xno; then
+  OPENCL_CFLAGS="-DWITH_OPENCL -I$with_cuda/include"
+  OPENCL_LIBS="-lOpenCL"
+else
+  OPENCL_CFLAGS=""
+  OPENCL_LIBS=""
+fi
+AC_SUBST(OPENCL_CFLAGS)
+AC_SUBST(OPENCL_LIBS)
+
+AM_CONDITIONAL([WANT_OPENCL], [test x$opencl != xno])
 AM_CONDITIONAL([WANT_JANSSON], [test x$request_jansson = xtrue])
 AM_CONDITIONAL([HAVE_WINDOWS], [test x$have_win32 = xtrue])
 AM_CONDITIONAL([ARCH_x86], [test x$have_x86 = xtrue])

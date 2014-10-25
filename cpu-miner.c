@@ -1,6 +1,8 @@
-﻿/*
+﻿/* vim: set ts=4 sw=4 sts=4 tw=0 cindent: */
+/*
  * Copyright 2010 Jeff Garzik
  * Copyright 2012-2014 pooler
+ * Copyright 2014 tpruvot / #ccminer team
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -51,9 +53,9 @@
 BOOL WINAPI ConsoleHandler(DWORD);
 #endif
 
-#define PROGRAM_NAME		"ccminer"
-#define LP_SCANTIME		60
-#define HEAVYCOIN_BLKHDR_SZ		84
+#define PROGRAM_NAME "cncminer"
+#define LP_SCANTIME 60
+#define HEAVYCOIN_BLKHDR_SZ 84
 #define MNR_BLKHDR_SZ 80
 
 // from heavy.cu
@@ -234,6 +236,10 @@ static unsigned long rejected_count = 0L;
 static double *thr_hashrates;
 uint64_t global_hashrate = 0;
 
+const char * opt_kernel = NULL;
+const char * kernel_path = NULL;
+uint32_t opt_work_size = (1 << 18); /* intensity 18 */
+
 #ifdef HAVE_GETOPT_LONG
 #include <getopt.h>
 #else
@@ -277,7 +283,14 @@ Options:\n\
   -d, --devices         Comma separated list of CUDA devices to use.\n\
                         Device IDs start counting from 0! Alternatively takes\n\
                         string names of your cards like gtx780ti or gt640#2\n\
-                        (matching 2nd gt640 in the PC)\n\
+                        (match 2nd GT640 in the PC)\n"
+#ifdef WITH_OPENCL
+"\
+  -i  --intensity=N     OpenCL work intensity (default: 18) \n\
+  -k  --kernel=...      OpenCL kernel.cl file \n\
+  -K  --kernel-path=... OpenCL .cl files folder (default: current) \n"
+#endif
+"\
   -f, --diff            Divide difficulty by this factor (std is 1) \n\
   -v, --vote=VOTE       block reward vote (for HeavyCoin)\n\
   -m, --trust-pool      trust the max block reward vote (maxvote) sent by the pool\n\
@@ -297,7 +310,7 @@ Options:\n\
       --no-longpoll     disable X-Long-Polling support\n\
       --no-stratum      disable X-Stratum support\n\
   -q, --quiet           disable per-thread hashmeter output\n\
-  -K, --no-color        disable colored output\n\
+      --no-color        disable colored output\n\
   -D, --debug           enable debug output\n\
   -P, --protocol-dump   verbose dump of protocol-level activities\n"
 #ifdef HAVE_SYSLOG_H
@@ -323,7 +336,7 @@ static char const short_options[] =
 #ifdef HAVE_SYSLOG_H
 	"S"
 #endif
-	"a:c:CKDhp:Px:qr:R:s:t:T:o:u:O:Vd:f:mv:";
+	"a:c:i:k:K:Dhp:Px:qr:R:s:t:T:o:u:O:Vd:f:mv:";
 
 static struct option const options[] = {
 	{ "algo", 1, NULL, 'a' },
@@ -334,9 +347,14 @@ static struct option const options[] = {
 	{ "cputest", 0, NULL, 1006 },
 	{ "cert", 1, NULL, 1001 },
 	{ "config", 1, NULL, 'c' },
-	{ "no-color", 0, NULL, 'K' },
+	{ "no-color", 0, NULL, 1002 },
 	{ "debug", 0, NULL, 'D' },
 	{ "help", 0, NULL, 'h' },
+#ifdef WITH_OPENCL
+	{ "intensity", 1, NULL, 'i' },
+	{ "kernel", 1, NULL, 'k' },
+	{ "kernel-path", 1, NULL, 'K' },
+#endif
 	{ "no-longpoll", 0, NULL, 1003 },
 	{ "no-stratum", 0, NULL, 1007 },
 	{ "pass", 1, NULL, 'p' },
@@ -1219,8 +1237,12 @@ continue_scan:
 			break;
 
 		case ALGO_BLAKE:
-			rc = scanhash_blake256(thr_id, work.data, work.target,
-			                      max_nonce, &hashes_done, 14);
+			if (opt_kernel != NULL)
+				rc = opencl_scan_blake256(thr_id, mythr->gpu,
+					work.data, work.target, max_nonce, &hashes_done);
+			else
+				rc = scanhash_blake256(thr_id, work.data, work.target,
+				                      max_nonce, &hashes_done, 14);
 			break;
 
 		case ALGO_FRESH:
@@ -1595,12 +1617,19 @@ static void parse_arg (int key, char *arg)
 		}
 		break;
 	}
-	case 'C':
-		/* color for compat */
-		use_colors = true;
+	case 'i':
+		v = atoi(arg);
+		if (v < 10 || v > 30) /* sanity check */
+			show_usage_and_exit(1);
+		opt_work_size = (1 << v);
+		break;
+	case 'k':
+		/* OpenCL kernel name */
+		opt_kernel = arg;
 		break;
 	case 'K':
-		use_colors = false;
+		/* OpenCL kernel path */
+		kernel_path = arg;
 		break;
 	case 'D':
 		opt_debug = true;
@@ -1745,6 +1774,9 @@ static void parse_arg (int key, char *arg)
 		break;
 	case 1007:
 		want_stratum = false;
+		break;
+	case 1002:
+		use_colors = false;
 		break;
 	case 'S':
 		use_syslog = true;
@@ -1925,6 +1957,10 @@ int main(int argc, char *argv[])
 	/* parse command line */
 	parse_cmdline(argc, argv);
 
+	if (kernel_path == NULL) {
+		kernel_path = get_current_dir_name();
+	}
+
 	cuda_devicenames();
 
 	if (!opt_benchmark && !rpc_url) {
@@ -1999,6 +2035,16 @@ int main(int argc, char *argv[])
 	thr_hashrates = (double *) calloc(opt_n_threads, sizeof(double));
 	if (!thr_hashrates)
 		return 1;
+
+	if (opt_kernel != NULL) {
+		for (i = 0; i < opt_n_threads; i++) {
+			thr = &thr_info[i];
+			thr->gpu = cl_gpu_init(device_map[i], opt_kernel);
+			if (thr->gpu == NULL)
+				break;
+		}
+		opt_n_threads = i;
+	}
 
 	/* init workio thread info */
 	work_thr_id = opt_n_threads;

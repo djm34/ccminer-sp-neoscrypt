@@ -7,6 +7,10 @@ extern "C" {
 
 #include "cpuminer-config.h"
 
+#ifdef WITH_OPENCL
+#include "opencl.h"
+#endif
+
 #include <stdbool.h>
 #include <inttypes.h>
 #include <sys/time.h>
@@ -327,6 +331,12 @@ struct thr_info {
 	int		id;
 	pthread_t	pth;
 	struct thread_q	*q;
+
+#ifdef WITH_OPENCL
+	CLGPU* gpu;
+	uint32_t shares_accepted;
+	uint32_t shares_rejected;
+#endif
 };
 
 struct work_restart {
